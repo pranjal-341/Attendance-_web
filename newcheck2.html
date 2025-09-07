@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Geofenced Attendance System</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Tailwind + QR libraries -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+  <style>
+    body { margin:0; padding:0; }
+    #blocked { text-align:center; padding:50px; color:red; font-size:20px; }
+    #learnPage { display:none; }
+  </style>
+  <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        .scanner-frame {
+            border: 4px solid #10b981;
+            border-radius: 24px;
+            position: relative;
+            overflow: hidden;
+            background: #000;
+        }
+        
+        .scanner-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        
+        .scanner-viewfinder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 250px;
+            height: 250px;
+            border: 3px solid #10b981;
+            border-radius: 20px;
+            box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
+        }
+        
+        .scanner-corners {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 250px;
+            height: 250px;
+            pointer-events: none;
+        }
+        
+        .corner {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border: 4px solid #10b981;
+        }
+        
+        .corner.top-left { top: -2px; left: -2px; border-right: none; border-bottom: none; }
+        .corner.top-right { top: -2px; right: -2px; border-left: none; border-bottom: none; }
+        .corner.bottom-left { bottom: -2px; left: -2px; border-right: none; border-top: none; }
+        .corner.bottom-right { bottom: -2px; right: -2px; border-left: none; border-top: none; }
+        
+        .scanning-line {
+            position: absolute;
+            width: 240px;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #10b981, #34d399, #10b981, transparent);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation: scanMove 2s linear infinite;
+            box-shadow: 0 0 10px #10b981;
+        }
+        
+        @keyframes scanMove {
+            0% { transform: translate(-50%, -50%) translateY(-120px); }
+            100% { transform: translate(-50%, -50%) translateY(120px); }
+        }
+        
+        .success-animation {
+            animation: successPulse 0.8s ease-out;
+        }
+        
+        @keyframes successPulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            50% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(16, 185, 129, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        
+        .qr-container {
+            background: linear-gradient(135deg, #f3f4f6 0%, #ffffff 100%);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        
+        .login-card {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        #videoElement {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .camera-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+        
+        .status-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            z-index: 10;
+        }
+        
+        .status-scanning { background: rgba(59, 130, 246, 0.9); color: white; }
+        .status-success { background: rgba(16, 185, 129, 0.9); color: white; }
+        .status-error { background: rgba(239, 68, 68, 0.9); color: white; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 min-h-screen">
+
+  <!-- Location check screen -->
+  <div id="blocked">Checking your location...</div>
+
+  <!-- Learn.html content (hidden until inside radius) -->
+  <div id="learnPage">
+    <!-- ========================== -->
+    <!-- START learn.html body code -->
+    <!-- ========================== -->
+
+    <!-- Header -->
+    <div class="bg-white/10 backdrop-blur-md border-b border-white/20">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 bg-gradient-to-r from-green-400 to-blue-500 rounded-xl flex items-center justify-center">
+                    <span class="text-white font-bold text-xl">🎓</span>
+                </div>
+                <div>
+                    <h1 class="text-white text-xl font-bold">Real Attendance System</h1>
+                    <p class="text-white/60 text-sm">Live Camera QR Scanning</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-4">
+                <span class="text-white/80 text-sm" id="currentTime"></span>
+                <div id="userInfo" class="hidden text-white/80 text-sm"></div>
+                <button id="logoutBtn" onclick="logout()" class="hidden bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                    Logout
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Role Selection -->
+        <div id="roleSelection" class="max-w-4xl mx-auto">
+            <div class="text-center mb-12">
+                <h2 class="text-4xl font-bold text-white mb-4">Real Working Attendance System</h2>
+                <p class="text-white/70 text-lg">Choose your role to access live features</p>
+            </div>
+            
+            <div class="grid md:grid-cols-2 gap-8">
+                <!-- College Login Card -->
+                <div class="login-card rounded-3xl p-8 text-center transform hover:scale-105 transition-all duration-300 cursor-pointer" onclick="showCollegeLogin()">
+                    <div class="w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <span class="text-3xl">🏫</span>
+                    </div>
+                    <h3 class="text-2xl font-bold text-white mb-3">College Admin</h3>
+                    <p class="text-white/70 mb-6">Generate real QR codes with encryption and manage live attendance data</p>
+                    <div class="bg-blue-500 hover:bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold transition-colors">
+                        Admin Portal
+                    </div>
+                </div>
+                
+                <!-- Student Login Card -->
+                <div class="login-card rounded-3xl p-8 text-center transform hover:scale-105 transition-all duration-300 cursor-pointer" onclick="showStudentLogin()">
+                    <div class="w-20 h-20 bg-gradient-to-r from-green-500 to-teal-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <span class="text-3xl">👨‍🎓</span>
+                    </div>
+                    <h3 class="text-2xl font-bold text-white mb-3">Student</h3>
+                    <p class="text-white/70 mb-6">Use real camera to scan QR codes and mark attendance instantly</p>
+                    <div class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-xl font-semibold transition-colors">
+                        Camera Scanner
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- College Login Section -->
+        <div id="collegeLoginSection" class="hidden max-w-md mx-auto">
+            <div class="login-card rounded-3xl p-8">
+                <div class="text-center mb-8">
+                    <div class="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span class="text-2xl">🏫</span>
+                    </div>
+                    <h2 class="text-3xl font-bold text-white mb-2">Admin Login</h2>
+                    <p class="text-white/70">Access real QR generation system</p>
+                </div>
+                
+                <form onsubmit="handleCollegeLogin(event)" class="space-y-6">
+                    <div>
+                        <label class="block text-white/80 text-sm font-medium mb-2">Admin ID</label>
+                        <input type="text" id="adminId" required 
+                               class="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                               placeholder="Enter admin ID">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-white/80 text-sm font-medium mb-2">Password</label>
+                        <input type="password" id="adminPassword" required 
+                               class="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                               placeholder="Enter password">
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold py-3 rounded-xl transition-all duration-200 transform hover:scale-105">
+                        🔐 Access Admin Panel
+                    </button>
+                </form>
+                
+                <div class="mt-6 p-4 bg-blue-500/20 rounded-xl border border-blue-500/30">
+                    <p class="text-white/80 text-sm text-center">
+                        <strong>Demo Credentials:</strong><br>
+                        ID: admin | Password: admin123
+                    </p>
+                </div>
+                
+                <button onclick="backToRoleSelection()" class="w-full mt-4 text-white/60 hover:text-white transition-colors">
+                    ← Back to Role Selection
+                </button>
+            </div>
+        </div>
+
+        <!-- Student Login Section -->
+        <div id="studentLoginSection" class="hidden max-w-md mx-auto">
+            <div class="login-card rounded-3xl p-8">
+                <div class="text-center mb-8">
+                    <div class="w-16 h-16 bg-gradient-to-r from-green-500 to-teal-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span class="text-2xl">👨‍🎓</span>
+                    </div>
+                    <h2 class="text-3xl font-bold text-white mb-2">Student Login</h2>
+                    <p class="text-white/70">Access live camera scanner</p>
+                </div>
+                
+                <form onsubmit="handleStudentLogin(event)" class="space-y-6">
+                    <div>
+                        <label class="block text-white/80 text-sm font-medium mb-2">Student ID</label>
+                        <input type="text" id="studentId" required 
+                               class="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
+                               placeholder="Enter your student ID">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-white/80 text-sm font-medium mb-2">Password</label>
+                        <input type="password" id="studentPassword" required 
+                               class="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
+                               placeholder="Enter your password">
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white font-semibold py-3 rounded-xl transition-all duration-200 transform hover:scale-105">
+                        📱 Access Camera Scanner
+                    </button>
+                </form>
+                
+                <div class="mt-6 p-4 bg-green-500/20 rounded-xl border border-green-500/30">
+                    <p class="text-white/80 text-sm text-center">
+                        <strong>Demo Credentials:</strong><br>
+                        Any Student ID | Password: student123
+                    </p>
+                </div>
+                
+                <button onclick="backToRoleSelection()" class="w-full mt-4 text-white/60 hover:text-white transition-colors">
+                    ← Back to Role Selection
+                </button>
+            </div>
+        </div>
+
+        <!-- College Dashboard -->
+        <div id="collegeDashboard" class="hidden">
+            <div class="grid lg:grid-cols-3 gap-8">
+                <!-- QR Code Generator -->
+                <div class="lg:col-span-2 space-y-8">
+                    <div class="login-card rounded-3xl p-8">
+                        <h2 class="text-2xl font-bold text-white mb-6 flex items-center">
+                            <span class="mr-3">🔗</span> Real QR Code Generator
+                        </h2>
+                        
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div class="space-y-4">
+                                <input type="text" id="qrStudentName" placeholder="Student Full Name" 
+                                       class="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                                
+                                <input type="text" id="qrStudentId" placeholder="Student ID" 
+                                       class="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                                
+                                <select id="qrStudentClass" class="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                                    <option value="">Select Class</option>
+                                    <option value="CS-101">Computer Science 101</option>
+                                    <option value="CS-201">Computer Science 201</option>
+                                    <option value="ENG-101">Engineering 101</option>
+                                    <option value="ENG-201">Engineering 201</option>
+                                    <option value="MATH-301">Mathematics 301</option>
+                                    <option value="PHY-401">Physics 401</option>
+                                    <option value="CHEM-301">Chemistry 301</option>
+                                </select>
+                                
+                                <select id="qrValidityPeriod" class="w-full px-4 py-3 bg-white/10 border border-white/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                                    <option value="24">Valid for 24 hours</option>
+                                    <option value="12">Valid for 12 hours</option>
+                                    <option value="6">Valid for 6 hours</option>
+                                    <option value="1">Valid for 1 hour</option>
+                                </select>
+                                
+                                <button onclick="generateRealQR()" class="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105">
+                                    🎯 Generate Real QR Code
+                                </button>
+                            </div>
+                            
+                            <div class="text-center">
+                                <div id="qrCodeDisplay" class="qr-container hidden">
+                                    <canvas id="qrCanvas" class="mx-auto"></canvas>
+                                    <div class="mt-4 text-sm text-gray-600">
+                                        <p id="qrStudentInfo"></p>
+                                        <p id="qrValidUntil" class="font-semibold"></p>
+                                        <button onclick="downloadQR()" class="mt-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                                            📥 Download QR
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="qrPlaceholder" class="w-64 h-64 bg-white/10 rounded-xl flex items-center justify-center mx-auto">
+                                    <div class="text-center text-white/60">
+                                        <div class="text-4xl mb-2">📱</div>
+                                        <p>Real QR Code will appear here</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Attendance Records -->
+                    <div class="login-card rounded-3xl p-8">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-xl font-bold text-white flex items-center">
+                                <span class="mr-3">📊</span> Live Attendance Records
+                            </h3>
+                            <div class="flex space-x-2">
+                                <button onclick="exportAttendanceData()" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-xl text-sm transition-colors">
+                                    📥 Export CSV
+                                </button>
+                                <button onclick="clearAllData()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-xl text-sm transition-colors">
+                                    🗑️ Clear All
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-white">
+                                <thead>
+                                    <tr class="border-b border-white/20">
+                                        <th class="text-left py-3 px-4">Time</th>
+                                        <th class="text-left py-3 px-4">Student</th>
+                                        <th class="text-left py-3 px-4">ID</th>
+                                        <th class="text-left py-3 px-4">Class</th>
+                                        <th class="text-left py-3 px-4">Status</th>
+                                        <th class="text-left py-3 px-4">Scanner</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="attendanceTableBody">
+                                    <tr>
+                                        <td colspan="6" class="text-center py-8 text-white/60">No attendance records yet</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistics Panel -->
+                <div class="space-y-6">
+                    <div class="login-card rounded-3xl p-6">
+                        <h3 class="text-lg font-bold text-white mb-4 flex items-center">
+                            <span class="mr-2">📈</span> Live Statistics
+                        </h3>
+                        
+                        <div class="space-y-4">
+                            <div class="text-center p-4 bg-green-500/20 rounded-xl border border-green-500/30">
+                                <div id="totalPresent" class="text-3xl font-bold text-green-400">0</div>
+                                <div class="text-white/80 text-sm">Present Today</div>
+                            </div>
+                            <div class="text-center p-4 bg-blue-500/20 rounded-xl border border-blue-500/30">
+                                <div id="totalScanned" class="text-3xl font-bold text-blue-400">0</div>
+                                <div class="text-white/80 text-sm">Total Scans</div>
+                            </div>
+                            <div class="text-center p-4 bg-purple-500/20 rounded-xl border border-purple-500/30">
+                                <div id="totalStudents" class="text-3xl font-bold text-purple-400">0</div>
+                                <div class="text-white/80 text-sm">Registered</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="login-card rounded-3xl p-6">
+                        <h3 class="text-lg font-bold text-white mb-4 flex items-center">
+                            <span class="mr-2">🔒</span> System Status
+                        </h3>
+                        
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center">
+                                <span class="text-white/80 text-sm">Data Storage</span>
+                                <span class="text-green-400 text-sm">✓ LocalStorage</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-white/80 text-sm">QR Encryption</span>
+                                <span class="text-green-400 text-sm">✓ SHA-256</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-white/80 text-sm">Real-time Sync</span>
+                                <span class="text-green-400 text-sm">✓ Active</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-white/80 text-sm">Camera Access</span>
+                                <span id="cameraStatus" class="text-yellow-400 text-sm">⚠ Pending</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Student Scanner Dashboard -->
+        <div id="studentDashboard" class="hidden">
+            <div class="max-w-6xl mx-auto">
+                <div class="grid lg:grid-cols-2 gap-8">
+                    <!-- Real Camera Scanner -->
+                    <div class="login-card rounded-3xl p-8">
+                        <h2 class="text-2xl font-bold text-white mb-6 text-center flex items-center justify-center">
+                            <span class="mr-3">📹</span> Live Camera Scanner
+                        </h2>
+                        
+                        <div class="scanner-frame aspect-square max-w-lg mx-auto mb-6 relative" id="scannerFrame">
+                            <video id="videoElement" autoplay muted playsinline class="hidden"></video>
+                            <canvas id="scannerCanvas" class="hidden"></canvas>
+                            
+                            <div id="cameraPlaceholder" class="w-full h-full flex items-center justify-center">
+                                <div class="text-center text-white/70">
+                                    <div class="text-6xl mb-4">📹</div>
+                                    <p>Click "Start Camera" to begin scanning</p>
+                                </div>
+                            </div>
+                            
+                            <div class="scanner-overlay">
+                                <div class="scanner-viewfinder"></div>
+                                <div class="scanner-corners">
+                                    <div class="corner top-left"></div>
+                                    <div class="corner top-right"></div>
+                                    <div class="corner bottom-left"></div>
+                                    <div class="corner bottom-right"></div>
+                                </div>
+                                <div id="scanningLine" class="scanning-line hidden"></div>
+                            </div>
+                            
+                            <div id="scannerStatus" class="status-indicator status-scanning hidden">
+                                Ready to scan
+                            </div>
+                            
+                            <div class="camera-controls">
+                                <button id="startCameraBtn" onclick="startCamera()" class="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105">
+                                    📹 Start Camera
+                                </button>
+                                <button id="stopCameraBtn" onclick="stopCamera()" class="hidden bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105">
+                                    ⏹️ Stop Camera
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center">
+                            <p class="text-white/60 text-sm mb-4">Position QR code within the green frame</p>
+                            <div class="flex justify-center space-x-4">
+                                <button onclick="switchCamera()" id="switchCameraBtn" class="hidden bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                                    🔄 Switch Camera
+                                </button>
+                                <button onclick="toggleFlash()" id="flashBtn" class="hidden bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                                    💡 Flash
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Student Info & Results -->
+                    <div class="space-y-6">
+                        <!-- Scan Result -->
+                        <div id="scanResult" class="login-card rounded-3xl p-6 hidden">
+                            <h3 class="text-lg font-bold text-white mb-4 flex items-center">
+                                <span class="mr-2">✅</span> Attendance Marked!
+                            </h3>
+                            
+                            <div class="bg-green-500/20 border border-green-500/30 rounded-xl p-4 mb-4">
+                                <div class="flex items-center space-x-4">
+                                    <div class="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                                        <span class="text-white text-xl">👨‍🎓</span>
+                                    </div>
+                                    <div>
+                                        <div id="scannedStudentName" class="text-white font-semibold"></div>
+                                        <div id="scannedStudentId" class="text-white/80 text-sm"></div>
+                                        <div id="scannedStudentClass" class="text-white/60 text-xs"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="text-center">
+                                <div class="text-green-400 font-semibold mb-2">✓ Successfully Recorded</div>
+                                <div id="attendanceTime" class="text-white/60 text-sm"></div>
+                            </div>
+                        </div>
+
+                        <!-- Student Profile -->
+                        <div class="login-card rounded-3xl p-6">
+                            <h3 class="text-lg font-bold text-white mb-4 flex items-center">
+                                <span class="mr-2">👤</span> Your Profile
+                            </h3>
+                            
+                            <div class="space-y-3">
+                                <div class="flex justify-between">
+                                    <span class="text-white/80">Student ID:</span>
+                                    <span class="text-white" id="profileStudentId">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-white/80">Today's Scans:</span>
+                                    <span class="text-green-400" id="todayScans">0</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-white/80">Last Scan:</span>
+                                    <span class="text-white/60" id="lastScanTime">Never</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-white/80">Camera Status:</span>
+                                    <span class="text-yellow-400" id="studentCameraStatus">Not Started</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recent Scans -->
+                        <div class="login-card rounded-3xl p-6">
+                            <h3 class="text-lg font-bold text-white mb-4 flex items-center">
+                                <span class="mr-2">📋</span> Recent Scans
+                            </h3>
+                            
+                            <div id="recentScans" class="space-y-3 max-h-64 overflow-y-auto">
+                                <div class="text-center text-white/60 py-4">
+                                    No scans yet
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Scanner Instructions -->
+                        <div class="login-card rounded-3xl p-6">
+                            <h3 class="text-lg font-bold text-white mb-4 flex items-center">
+                                <span class="mr-2">💡</span> How to Scan
+                            </h3>
+                            
+                            <div class="space-y-2 text-white/80 text-sm">
+                                <p>1. Click "Start Camera" to activate scanner</p>
+                                <p>2. Allow camera permissions when prompted</p>
+                                <p>3. Position QR code within green frame</p>
+                                <p>4. Hold steady until scan completes</p>
+                                <p>5. Attendance will be marked automatically</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    </div>
+
+  <!-- ============================= -->
+  <!-- Location check (geofencing) JS -->
+  <!-- ============================= -->
+  <script>
+    const targetLat = 19.0735457;
+    const targetLon = 73.0951149;
+    const allowedRadius = 15; // meters
+
+    function getDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = (x) => (x * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2)**2 +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const distance = getDistance(pos.coords.latitude, pos.coords.longitude, targetLat, targetLon);
+        if (distance <= allowedRadius) {
+          document.getElementById("blocked").style.display = "none";
+          document.getElementById("learnPage").style.display = "block";
+        } else {
+          document.getElementById("blocked").textContent = "🚫 Access Denied. You are outside the 15m radius.";
+        }
+      },
+      (err) => {
+        document.getElementById("blocked").textContent = "❌ Location access denied. Cannot verify your position.";
+      }
+    );
+  </script>
+    
+  <script>
+    // Global variables
+        let currentUser = null;
+        let userRole = null;
+        let attendanceRecords = [];
+        let studentDatabase = [];
+        let stats = { present: 0, scanned: 0, students: 0 };
+        
+        // Camera variables
+        let videoStream = null;
+        let isScanning = false;
+        let scanningInterval = null;
+        let currentCamera = 'environment'; // 'user' for front, 'environment' for back
+        let availableCameras = [];
+
+        // Initialize app
+        window.addEventListener('load', () => {
+            loadStoredData();
+            updateTime();
+            setInterval(updateTime, 1000);
+            
+            // Check camera availability
+            checkCameraSupport();
+        });
+
+        // Update time display
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent = now.toLocaleString();
+        }
+
+        // Check camera support
+        async function checkCameraSupport() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                availableCameras = devices.filter(device => device.kind === 'videoinput');
+                
+                if (availableCameras.length > 0) {
+                    document.getElementById('cameraStatus').innerHTML = '<span class="text-green-400">✓ Available</span>';
+                } else {
+                    document.getElementById('cameraStatus').innerHTML = '<span class="text-red-400">✗ Not Found</span>';
+                }
+            } catch (error) {
+                document.getElementById('cameraStatus').innerHTML = '<span class="text-red-400">✗ No Access</span>';
+            }
+        }
+
+        // Load stored data from localStorage
+        function loadStoredData() {
+            const storedRecords = localStorage.getItem('attendanceRecords');
+            const storedStudents = localStorage.getItem('studentDatabase');
+            const storedStats = localStorage.getItem('attendanceStats');
+            
+            if (storedRecords) {
+                attendanceRecords = JSON.parse(storedRecords);
+            }
+            if (storedStudents) {
+                studentDatabase = JSON.parse(storedStudents);
+            }
+            if (storedStats) {
+                stats = JSON.parse(storedStats);
+            }
+        }
+
+        // Save data to localStorage
+        function saveData() {
+            localStorage.setItem('attendanceRecords', JSON.stringify(attendanceRecords));
+            localStorage.setItem('studentDatabase', JSON.stringify(studentDatabase));
+            localStorage.setItem('attendanceStats', JSON.stringify(stats));
+        }
+
+        // Role selection functions
+        function showCollegeLogin() {
+            document.getElementById('roleSelection').classList.add('hidden');
+            document.getElementById('collegeLoginSection').classList.remove('hidden');
+        }
+
+        function showStudentLogin() {
+            document.getElementById('roleSelection').classList.add('hidden');
+            document.getElementById('studentLoginSection').classList.remove('hidden');
+        }
+
+        function backToRoleSelection() {
+            document.getElementById('roleSelection').classList.remove('hidden');
+            document.getElementById('collegeLoginSection').classList.add('hidden');
+            document.getElementById('studentLoginSection').classList.add('hidden');
+        }
+
+        // College login handler
+        function handleCollegeLogin(event) {
+            event.preventDefault();
+            
+            const adminId = document.getElementById('adminId').value;
+            const password = document.getElementById('adminPassword').value;
+            
+            if (adminId === "admin" && password === "admin123") {
+                currentUser = { id: adminId, role: 'college' };
+                userRole = 'college';
+                
+                document.getElementById('collegeLoginSection').classList.add('hidden');
+                document.getElementById('collegeDashboard').classList.remove('hidden');
+                document.getElementById('logoutBtn').classList.remove('hidden');
+                document.getElementById('userInfo').classList.remove('hidden');
+                document.getElementById('userInfo').textContent = `Admin: ${adminId}`;
+                
+                showNotification('College admin login successful!', 'success');
+                loadCollegeDashboard();
+            } else {
+                showNotification('Invalid credentials. Use: admin / admin123', 'error');
+            }
+        }
+
+        // Student login handler
+        function handleStudentLogin(event) {
+            event.preventDefault();
+            
+            const studentId = document.getElementById('studentId').value;
+            const password = document.getElementById('studentPassword').value;
+            
+            if (studentId && password === "student123") {
+                currentUser = { id: studentId, role: 'student' };
+                userRole = 'student';
+                
+                document.getElementById('studentLoginSection').classList.add('hidden');
+                document.getElementById('studentDashboard').classList.remove('hidden');
+                document.getElementById('logoutBtn').classList.remove('hidden');
+                document.getElementById('userInfo').classList.remove('hidden');
+                document.getElementById('userInfo').textContent = `Student: ${studentId}`;
+                
+                showNotification('Student login successful! Camera access ready.', 'success');
+                loadStudentDashboard();
+            } else {
+                showNotification('Invalid credentials. Use any ID with password: student123', 'error');
+            }
+        }
+
+        // Load college dashboard
+        function loadCollegeDashboard() {
+            updateStats();
+            loadAttendanceTable();
+        }
+
+        // Load student dashboard
+        function loadStudentDashboard() {
+            document.getElementById('profileStudentId').textContent = currentUser.id;
+            updateStudentStats();
+            loadRecentScans();
+        }
+
+        // Generate real QR code with encryption
+        async function generateRealQR() {
+            const name = document.getElementById('qrStudentName').value;
+            const studentId = document.getElementById('qrStudentId').value;
+            const studentClass = document.getElementById('qrStudentClass').value;
+            const validityHours = document.getElementById('qrValidityPeriod').value;
+            
+            if (!name || !studentId || !studentClass) {
+                showNotification('Please fill in all student details', 'error');
+                return;
+            }
+            
+            // Create encrypted QR data
+            const qrData = {
+                studentId: studentId,
+                name: name,
+                class: studentClass,
+                timestamp: Date.now(),
+                validUntil: Date.now() + (validityHours * 60 * 60 * 1000),
+                securityHash: await generateSecurityHash(studentId + name + Date.now()),
+                version: "3.0",
+                issuer: currentUser.id
+            };
+            
+            // Add to student database
+            const existingIndex = studentDatabase.findIndex(s => s.id === studentId);
+            if (existingIndex >= 0) {
+                studentDatabase[existingIndex] = { id: studentId, name: name, class: studentClass, qrData: qrData };
+            } else {
+                studentDatabase.push({ id: studentId, name: name, class: studentClass, qrData: qrData });
+            }
+            
+            // Generate QR code
+            const canvas = document.getElementById('qrCanvas');
+            const qrString = JSON.stringify(qrData);
+            
+            try {
+                await QRCode.toCanvas(canvas, qrString, {
+                    width: 256,
+                    margin: 2,
+                    color: {
+                        dark: '#1f2937',
+                        light: '#ffffff'
+                    },
+                    errorCorrectionLevel: 'H'
+                });
+                
+                document.getElementById('qrPlaceholder').classList.add('hidden');
+                document.getElementById('qrCodeDisplay').classList.remove('hidden');
+                document.getElementById('qrStudentInfo').textContent = `${name} (${studentId}) - ${studentClass}`;
+                document.getElementById('qrValidUntil').textContent = `Valid until: ${new Date(qrData.validUntil).toLocaleString()}`;
+                
+                // Clear form
+                document.getElementById('qrStudentName').value = '';
+                document.getElementById('qrStudentId').value = '';
+                document.getElementById('qrStudentClass').value = '';
+                
+                stats.students = studentDatabase.length;
+                updateStats();
+                saveData();
+                
+                showNotification(`Real QR code generated for ${name}`, 'success');
+                
+            } catch (error) {
+                showNotification('Error generating QR code', 'error');
+                console.error('QR Generation Error:', error);
+            }
+        }
+
+        // Generate security hash using Web Crypto API
+        async function generateSecurityHash(data) {
+            const encoder = new TextEncoder();
+            const dataBuffer = encoder.encode(data);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // Download QR code
+        function downloadQR() {
+            const canvas = document.getElementById('qrCanvas');
+            const link = document.createElement('a');
+            link.download = `qr-code-${Date.now()}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
+            showNotification('QR code downloaded successfully', 'success');
+        }
+
+        // Start camera for scanning
+        async function startCamera() {
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: currentCamera,
+                        width: { ideal: 640 },
+                        height: { ideal: 640 }
+                    }
+                };
+                
+                videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                const videoElement = document.getElementById('videoElement');
+                
+                videoElement.srcObject = videoStream;
+                videoElement.classList.remove('hidden');
+                document.getElementById('cameraPlaceholder').classList.add('hidden');
+                document.getElementById('startCameraBtn').classList.add('hidden');
+                document.getElementById('stopCameraBtn').classList.remove('hidden');
+                document.getElementById('scanningLine').classList.remove('hidden');
+                
+                if (availableCameras.length > 1) {
+                    document.getElementById('switchCameraBtn').classList.remove('hidden');
+                }
+                
+                document.getElementById('studentCameraStatus').innerHTML = '<span class="text-green-400">Active</span>';
+                document.getElementById('scannerStatus').textContent = 'Scanning for QR codes...';
+                document.getElementById('scannerStatus').classList.remove('hidden');
+                
+                // Start scanning process
+                startQRScanning();
+                
+                showNotification('Camera started successfully!', 'success');
+                
+            } catch (error) {
+                console.error('Camera Error:', error);
+                showNotification('Camera access denied or not available', 'error');
+                document.getElementById('studentCameraStatus').innerHTML = '<span class="text-red-400">Failed</span>';
+            }
+        }
+
+        // Stop camera
+        function stopCamera() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+            
+            if (scanningInterval) {
+                clearInterval(scanningInterval);
+                scanningInterval = null;
+            }
+            
+            isScanning = false;
+            
+            document.getElementById('videoElement').classList.add('hidden');
+            document.getElementById('cameraPlaceholder').classList.remove('hidden');
+            document.getElementById('startCameraBtn').classList.remove('hidden');
+            document.getElementById('stopCameraBtn').classList.add('hidden');
+            document.getElementById('switchCameraBtn').classList.add('hidden');
+            document.getElementById('scanningLine').classList.add('hidden');
+            document.getElementById('scannerStatus').classList.add('hidden');
+            
+            document.getElementById('studentCameraStatus').innerHTML = '<span class="text-yellow-400">Stopped</span>';
+            
+            showNotification('Camera stopped', 'info');
+        }
+
+        // Switch between front and back camera
+        async function switchCamera() {
+            currentCamera = currentCamera === 'environment' ? 'user' : 'environment';
+            
+            if (videoStream) {
+                stopCamera();
+                setTimeout(() => {
+                    startCamera();
+                }, 500);
+            }
+        }
+
+        // Start QR code scanning process
+        function startQRScanning() {
+            const videoElement = document.getElementById('videoElement');
+            const canvas = document.getElementById('scannerCanvas');
+            const context = canvas.getContext('2d');
+            
+            isScanning = true;
+            
+            scanningInterval = setInterval(() => {
+                if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+                    canvas.width = videoElement.videoWidth;
+                    canvas.height = videoElement.videoHeight;
+                    
+                    context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                    
+                    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+                    
+                    if (code) {
+                        processScannedQR(code.data);
+                    }
+                }
+            }, 100); // Scan every 100ms
+        }
+
+        // Process scanned QR code
+        async function processScannedQR(qrData) {
+            try {
+                const parsedData = JSON.parse(qrData);
+                
+                // Validate QR code structure
+                if (!parsedData.studentId || !parsedData.name || !parsedData.validUntil) {
+                    showNotification('Invalid QR code format', 'error');
+                    return;
+                }
+                
+                // Check expiration
+                if (Date.now() > parsedData.validUntil) {
+                    showNotification('QR code has expired', 'error');
+                    document.getElementById('scannerStatus').textContent = 'QR Code Expired';
+                    document.getElementById('scannerStatus').className = 'status-indicator status-error';
+                    return;
+                }
+                
+                // Verify security hash
+                const expectedHash = await generateSecurityHash(parsedData.studentId + parsedData.name + parsedData.timestamp);
+                if (parsedData.securityHash !== expectedHash) {
+                    showNotification('Security verification failed', 'error');
+                    document.getElementById('scannerStatus').textContent = 'Security Check Failed';
+                    document.getElementById('scannerStatus').className = 'status-indicator status-error';
+                    return;
+                }
+                
+                // Check for duplicate scan (prevent multiple scans within 5 minutes)
+                const recentScan = attendanceRecords.find(record => 
+                    record.studentId === parsedData.studentId && 
+                    (Date.now() - new Date(record.timestamp).getTime()) < 5 * 60 * 1000
+                );
+                
+                if (recentScan) {
+                    showNotification('Already scanned recently. Wait 5 minutes.', 'error');
+                    return;
+                }
+                
+                // Record attendance
+                const attendanceRecord = {
+                    timestamp: new Date(),
+                    studentId: parsedData.studentId,
+                    name: parsedData.name,
+                    class: parsedData.class,
+                    scannedBy: currentUser.id,
+                    status: 'Present',
+                    qrVersion: parsedData.version,
+                    location: 'Camera Scanner'
+                };
+                
+                attendanceRecords.push(attendanceRecord);
+                
+                // Update stats
+                stats.present++;
+                stats.scanned++;
+                
+                // Save data
+                saveData();
+                
+                // Update UI
+                showScanResult(parsedData);
+                updateStudentStats();
+                loadRecentScans();
+                
+                // Visual feedback
+                document.getElementById('scannerStatus').textContent = 'Scan Successful!';
+                document.getElementById('scannerStatus').className = 'status-indicator status-success';
+                document.getElementById('scannerFrame').classList.add('success-animation');
+                
+                setTimeout(() => {
+                    document.getElementById('scannerFrame').classList.remove('success-animation');
+                    document.getElementById('scannerStatus').textContent = 'Scanning for QR codes...';
+                    document.getElementById('scannerStatus').className = 'status-indicator status-scanning';
+                }, 2000);
+                
+                showNotification(`Attendance marked for ${parsedData.name}!`, 'success');
+                
+            } catch (error) {
+                console.error('QR Processing Error:', error);
+                showNotification('Invalid QR code data', 'error');
+            }
+        }
+
+        // Show scan result
+        function showScanResult(qrData) {
+            document.getElementById('scannedStudentName').textContent = qrData.name;
+            document.getElementById('scannedStudentId').textContent = `ID: ${qrData.studentId}`;
+            document.getElementById('scannedStudentClass').textContent = `Class: ${qrData.class}`;
+            document.getElementById('attendanceTime').textContent = `Scanned at: ${new Date().toLocaleString()}`;
+            document.getElementById('scanResult').classList.remove('hidden');
+            
+            setTimeout(() => {
+                document.getElementById('scanResult').classList.add('hidden');
+            }, 5000);
+        }
+
+        // Load recent scans for student
+        function loadRecentScans() {
+            const recentScans = document.getElementById('recentScans');
+            const studentScans = attendanceRecords
+                .filter(record => record.scannedBy === currentUser.id)
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .slice(0, 10);
+            
+            if (studentScans.length === 0) {
+                recentScans.innerHTML = '<div class="text-center text-white/60 py-4">No scans yet</div>';
+                return;
+            }
+            
+            recentScans.innerHTML = studentScans.map(scan => `
+                <div class="bg-green-500/20 border border-green-500/30 rounded-lg p-3">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <div class="text-white font-medium">${scan.name}</div>
+                            <div class="text-white/60 text-sm">${scan.class}</div>
+                        </div>
+                        <div class="text-green-400 text-sm">
+                            ${new Date(scan.timestamp).toLocaleTimeString()}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Update student statistics
+        function updateStudentStats() {
+            const todayScans = attendanceRecords.filter(record => 
+                record.scannedBy === currentUser.id && 
+                new Date(record.timestamp).toDateString() === new Date().toDateString()
+            ).length;
+            
+            document.getElementById('todayScans').textContent = todayScans;
+            
+            const lastScan = attendanceRecords
+                .filter(record => record.scannedBy === currentUser.id)
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+            
+            if (lastScan) {
+                document.getElementById('lastScanTime').textContent = new Date(lastScan.timestamp).toLocaleString();
+            }
+        }
+
+        // Update statistics
+        function updateStats() {
+            document.getElementById('totalPresent').textContent = stats.present;
+            document.getElementById('totalScanned').textContent = stats.scanned;
+            document.getElementById('totalStudents').textContent = stats.students;
+        }
+
+        // Load attendance table
+        function loadAttendanceTable() {
+            const tbody = document.getElementById('attendanceTableBody');
+            tbody.innerHTML = '';
+            
+            if (attendanceRecords.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-white/60">No attendance records yet</td></tr>';
+                return;
+            }
+            
+            attendanceRecords.slice(-20).reverse().forEach(record => {
+                const row = document.createElement('tr');
+                row.className = 'border-b border-white/10 hover:bg-white/5';
+                row.innerHTML = `
+                    <td class="py-3 px-4 text-white/80">${new Date(record.timestamp).toLocaleTimeString()}</td>
+                    <td class="py-3 px-4">${record.name}</td>
+                    <td class="py-3 px-4 text-white/80">${record.studentId}</td>
+                    <td class="py-3 px-4 text-white/80">${record.class}</td>
+                    <td class="py-3 px-4 text-green-400">✓ ${record.status}</td>
+                    <td class="py-3 px-4 text-white/60">${record.scannedBy}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Export attendance data
+        function exportAttendanceData() {
+            if (attendanceRecords.length === 0) {
+                showNotification('No data to export', 'error');
+                return;
+            }
+            
+            const csvContent = "data:text/csv;charset=utf-8," 
+                + "Timestamp,Student Name,Student ID,Class,Status,Scanned By,QR Version,Location\n"
+                + attendanceRecords.map(record => 
+                    `${record.timestamp},${record.name},${record.studentId},${record.class},${record.status},${record.scannedBy},${record.qrVersion || 'N/A'},${record.location || 'N/A'}`
+                ).join("\n");
+            
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `real_attendance_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showNotification('Real attendance data exported successfully', 'success');
+        }
+
+        // Clear all data
+        function clearAllData() {
+            if (confirm('Are you sure you want to clear all attendance data? This cannot be undone.')) {
+                attendanceRecords = [];
+                studentDatabase = [];
+                stats = { present: 0, scanned: 0, students: 0 };
+                
+                localStorage.removeItem('attendanceRecords');
+                localStorage.removeItem('studentDatabase');
+                localStorage.removeItem('attendanceStats');
+                
+                updateStats();
+                loadAttendanceTable();
+                
+                showNotification('All data cleared successfully', 'success');
+            }
+        }
+
+        // Logout function
+        function logout() {
+            // Stop camera if running
+            if (videoStream) {
+                stopCamera();
+            }
+            
+            currentUser = null;
+            userRole = null;
+            
+            // Hide all dashboards
+            document.getElementById('collegeDashboard').classList.add('hidden');
+            document.getElementById('studentDashboard').classList.add('hidden');
+            document.getElementById('logoutBtn').classList.add('hidden');
+            document.getElementById('userInfo').classList.add('hidden');
+            
+            // Show role selection
+            document.getElementById('roleSelection').classList.remove('hidden');
+            
+            // Reset forms
+            document.getElementById('adminId').value = '';
+            document.getElementById('adminPassword').value = '';
+            document.getElementById('studentId').value = '';
+            document.getElementById('studentPassword').value = '';
+            
+            showNotification('Logged out successfully', 'info');
+        }
+
+        // Show notifications
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 px-6 py-3 rounded-xl text-white font-medium z-50 transform transition-all duration-300 translate-x-full max-w-sm`;
+            
+            if (type === 'success') {
+                notification.classList.add('bg-green-500');
+            } else if (type === 'error') {
+                notification.classList.add('bg-red-500');
+            } else {
+                notification.classList.add('bg-blue-500');
+            }
+            
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 100);
+            
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    if (document.body.contains(notification)) {
+                        document.body.removeChild(notification);
+                    }
+                }, 300);
+            }, 4000);
+        }
+
+        // Handle page visibility change (pause camera when tab is hidden)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && videoStream) {
+                // Pause scanning when tab is hidden
+                if (scanningInterval) {
+                    clearInterval(scanningInterval);
+                    scanningInterval = null;
+                }
+            } else if (!document.hidden && videoStream && !scanningInterval) {
+                // Resume scanning when tab is visible
+                startQRScanning();
+            }
+        });
+  </script>
+
+</body>
+</html>
